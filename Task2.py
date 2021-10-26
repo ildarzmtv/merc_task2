@@ -67,28 +67,16 @@
 # In[1]:
 
 
-get_ipython().system('pip install --user pandas-profiling')
-
-
-# In[2]:
-
-
-get_ipython().system('pip install umap-learn')
-
-
-# In[3]:
-
-
 get_ipython().system('pip install sklearn_pandas')
 
 
-# In[73]:
+# In[4]:
 
 
 get_ipython().system('pip install --user yellowbrick')
 
 
-# In[255]:
+# In[3]:
 
 
 import numpy as np
@@ -99,22 +87,14 @@ from matplotlib import pyplot as plt
 
 import seaborn as sns
 
-from pandas_profiling import ProfileReport
-
 import plotly.express as px
-import plotly.graph_objects as go
 
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, LabelEncoder, QuantileTransformer
-from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import PowerTransformer
 from sklearn.decomposition import PCA
-from sklearn.compose import ColumnTransformer
 from sklearn.cluster import KMeans
-from yellowbrick.cluster import KElbowVisualizer, SilhouetteVisualizer
+from yellowbrick.cluster import SilhouetteVisualizer
 
 from sklearn_pandas import DataFrameMapper, gen_features
-
-from umap import UMAP
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -123,13 +103,13 @@ get_ipython().run_line_magic('matplotlib', 'inline')
 sns.set_theme()
 
 
-# In[256]:
+# In[5]:
 
 
 PALETTE = sns.color_palette("Set2")
 
 
-# In[257]:
+# In[6]:
 
 
 sns.set_context("paper", rc={"font.size":12, 
@@ -155,7 +135,7 @@ sns.set_context("paper", rc={"font.size":12,
 
 # ## First look
 
-# In[258]:
+# In[7]:
 
 
 data = pd.read_csv('archive/marketing_campaign.csv', sep='\t', 
@@ -163,13 +143,13 @@ data = pd.read_csv('archive/marketing_campaign.csv', sep='\t',
                    parse_dates=['Dt_Customer'])
 
 
-# In[259]:
+# In[8]:
 
 
 data.head(10)
 
 
-# In[260]:
+# In[9]:
 
 
 data.info()
@@ -177,13 +157,13 @@ data.info()
 
 # There are two columns that are not mentioned in dataset decription: `Z_CostCount` and `Z_Revenue`
 
-# In[261]:
+# In[10]:
 
 
 data['Z_Revenue'].value_counts()
 
 
-# In[262]:
+# In[11]:
 
 
 data['Z_CostContact'].value_counts()
@@ -191,34 +171,56 @@ data['Z_CostContact'].value_counts()
 
 # As long as there are only one values in both columns, i can delete them
 
-# In[263]:
+# In[12]:
 
 
 data.drop(columns=['Z_Revenue', 'Z_CostContact'], inplace=True)
 
 
+# ## Duplicates
+
+# In[13]:
+
+
+data[data.duplicated(keep=False)].sort_values(by='Income')
+
+
+# In[14]:
+
+
+data[data.duplicated(keep='first')]
+
+
+# There are 358 duplicates and only 358-182 = 176 unique occurances, so there are even duplucates with 3 or more copies. I guess they are not valid, because i don't think that it could be possible to have absolutely equal customers. Equal amount spent on different types of products, number of pruchases, number of website visits in last month and all other features... Without dataset author i can't be sure in their validity or invalidity, but i will drop them
+
+# In[15]:
+
+
+data.drop_duplicates(inplace=True)
+
+
 # ## Data related features
 
-# I have no idea in which year this dataset was collected, because the dataset creator doesn't provide us with any description 
+# I have no idea in which year this dataset was collected, because the dataset creator doesn't provide us with this information
 # 
-# So let's assume that the dataset was collected on the next day of the last customer enrollment 
+# So let's assume that the dataset was collected on the __next day of the last customer enrollment + 2 years__, because most of the features are aggregated for last 2 years.
 
-# In[264]:
+# In[16]:
 
 
 print('The last day a client was enrolled is ', data['Dt_Customer'].dt.date.max())
 
 
-# There are time-connected features: `Year_Birth` and `Dt_Customer`. I will transform `Year_Birth` into `Age` feature by substracting year of birth from 2014. And it also nice to transform datetime feature `Dt_Customer` into integer `Customer_For`, which is the amount of days since customer enrollment
+# There are time-connected features: `Year_Birth` and `Dt_Customer`. I will transform `Year_Birth` into `Age` feature by substracting year of birth from 2016. And it also nice to transform datetime feature `Dt_Customer` into integer `CustomerFor`, which is the amount of days since customer enrollment
 
-# In[265]:
-
-
-data.insert(1, 'Age', 2014 - data['Year_Birth'])
-data.insert(2, 'Customer_For', (np.datetime64('2014-12-07') - data['Dt_Customer']).dt.days)
+# In[17]:
 
 
-# In[266]:
+data.insert(1, 'Age', 2016 - data['Year_Birth'])
+data.insert(2, 'CustomerFor', (np.datetime64('2016-12-07') - data['Dt_Customer']).dt.days)
+
+
+# In[18]:
 
 
 data.drop(columns=['Dt_Customer', 'Year_Birth'], inplace=True)
@@ -226,7 +228,7 @@ data.drop(columns=['Dt_Customer', 'Year_Birth'], inplace=True)
 
 # __Age distribution__
 
-# In[267]:
+# In[19]:
 
 
 plt.figure(figsize=(24, 6))
@@ -237,19 +239,19 @@ plt.xticks(np.linspace(data['Age'].min(), data['Age'].max(), 26, dtype=int, endp
 plt.show()
 
 
-# There are really old customers
+# There are really old customers ._.
+# 
+# I think they are missclicked or something while entering year of birth. Everything else looks okay, so i will drop them out while training the model, but will include them in the dataset to predict
 
-# In[268]:
+# In[20]:
 
 
 data.query('Age > 110')
 
 
-# Later i will create dataset without outliers for training, but i will predict on the whole set with outliers
-
 # ## Income
 
-# In[520]:
+# In[21]:
 
 
 plt.figure(figsize=(16,5))
@@ -260,56 +262,43 @@ plt.show()
 
 # There are some outliers. Let's look on them.
 
-# In[278]:
+# In[22]:
 
 
 data.query('Income > 140000')
 
 
-# ### Outliers
+# There is no reason to consider this data invalid. But while using clutering methods, outliers can negatively affect. I'll also drop these rows while training
 
-# There is no reason to consider this data invalid. But while using clutering methods, outliers can negatively affect. So i would drop a customer with 666666 Income, and then we would predict on it 
-
-# In[329]:
+# In[23]:
 
 
 plt.figure(figsize=(24, 6))
 plt.title('Customers yearly household income distribution')
-ax = sns.distplot(data.query('Income < 500000')['Income'], rug=True)
+ax = sns.distplot(data.query('Income < 150000')['Income'], rug=True)
 
 plt.show()
 
 
-# In[287]:
+# __Filling nulls__
 
-
-data['Income'].quantile(0.25)
-data['Income'].quantile(0.75)
-
-
-# ### Filling nulls
-
-# In[293]:
+# In[24]:
 
 
 print(f'There are {data["Income"].isna().sum()} missing Income values')
 
 
-# In[288]:
+# Let's impute this NaN's with median
+
+# In[25]:
 
 
-income_imputer = SimpleImputer(strategy='median')
-
-
-# In[289]:
-
-
-data['Income'] = income_imputer.transform(data['Income'].values.reshape(-1,1))[:, 0]
+data['Income'].fillna(data['Income'].median(), inplace=True)
 
 
 # ## Education
 
-# In[294]:
+# In[26]:
 
 
 data['Education'].value_counts()
@@ -319,31 +308,28 @@ data['Education'].value_counts()
 
 # > All countries conveyed their national systems to a two cycle structure consisting of a first (undergraduate) and a second (graduate) cycle. _Source:_ [EHEA](http://www.ehea.info/page-three-cycle-system) 
 
-# According to three Cycle System from the European Higher Education Area, `2n Cycle` refers to `Master` degree. And `Graduation` means that the person is on the second - graduate cycle, so in fact he finished the first - undergraduate cycle (in many countries labelled `Bachelor`)
+# According to three Cycle System from the European Higher Education Area, `2n Cycle` refers to `Master` degree. And `Graduation` means that the person is on the second - graduate cycle, so in fact he finished the first - undergraduate cycle (in many countries named `Bachelor`)
 # 
 # So the changes are as follow:
 # - `2n Cycle` -> `Master`
 # - `Graduation` -> `Bachelor`
 
-# In[295]:
+# In[27]:
 
 
-data['Education'].replace(['2n Cycle', 'Graduation'], ['Master', 'Bachelor'], inplace=True)
+data['Education'].replace(['2n Cycle', 'Graduation'], 
+                          ['Master', 'Bachelor'], inplace=True)
 
 
-# In[296]:
+# In[28]:
 
 
-unique_column_labels = data['Education'].unique()
-sizes = []
-
-for i, label in enumerate(unique_column_labels):
-    sizes.append(data.loc[data['Education'] == label].shape[0])
+sizes = dict(data['Education'].value_counts())
 
 plt.figure(figsize=(12, 8))
 plt.title("Education degrees proportion")
-plt.pie(sizes, labels=unique_column_labels, autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
-plt.legend(title="Client's eduation", labels=unique_column_labels, bbox_to_anchor=(1, 1))
+plt.pie(sizes.values(), labels=sizes.keys(), autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
+plt.legend(title="Client's eduation", labels=sizes.keys(), bbox_to_anchor=(1, 1))
 
 # add a circle at the center to transform it in a donut chart
 my_circle=plt.Circle( (0,0), 0.7, color='white')
@@ -355,11 +341,11 @@ plt.show()
 
 # Let's see how the Income varies across different education degrees
 
-# In[328]:
+# In[29]:
 
 
 plt.figure(figsize=(18, 6))
-sns.boxplot(data=data.query('Income < 500000'), x='Education', y='Income', palette=PALETTE)
+sns.boxplot(data=data.query('Income < 500000'), x='Education', y='Income', palette=PALETTE, showfliers=False,)
 plt.title('Customers income by education degree')
 
 plt.show()
@@ -369,7 +355,7 @@ plt.show()
 
 # ## Marital status
 
-# In[301]:
+# In[30]:
 
 
 data['Marital_Status'].value_counts()
@@ -381,15 +367,15 @@ data['Marital_Status'].value_counts()
 
 # > YOLO (You only live once) accords to the lifestyle or trend that many young people have adopted as a way to better enjoy life, and not to think about saving up for the future. 
 
-# I can assume that `YOLO` category refers to people who do not have a permanent partner, so i will also merge it to `Single`
+# I can assume that `YOLO` category refers to people who do not have a permanent partner, so i will merge it to `Single`
 
 # __Absurd__
 
 # > In philosophy, "the Absurd" refers to the conflict between the human tendency to seek inherent value and meaning in life, and the human inability to find these with any certainty.
 
-# So i would also merge `Absurd` to `Single`
+# I would also merge `Absurd` to `Single`
 
-# In[302]:
+# In[31]:
 
 
 data['Marital_Status'].replace(['YOLO', 'Absurd', 'Alone'], 'Single', inplace=True)
@@ -397,19 +383,15 @@ data['Marital_Status'].replace(['YOLO', 'Absurd', 'Alone'], 'Single', inplace=Tr
 
 # Now let's look on the marital statuses proportions 
 
-# In[303]:
+# In[32]:
 
 
-unique_column_labels = data['Marital_Status'].unique()
-sizes = []
-
-for i, label in enumerate(unique_column_labels):
-    sizes.append(data.loc[data['Marital_Status'] == label].shape[0])
+sizes = dict(data['Marital_Status'].value_counts())
 
 plt.figure(figsize=(12, 8))
 plt.title("Marital statuses proportion")
-plt.pie(sizes, labels=unique_column_labels, autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
-plt.legend(title="Client's marital status", labels=unique_column_labels, bbox_to_anchor=(1, 1))
+plt.pie(sizes.values(), labels=sizes.keys(), autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
+plt.legend(title="Client's marital status", labels=sizes.keys(), bbox_to_anchor=(1, 1))
 
 # add a circle at the center to transform it in a donut chart
 my_circle=plt.Circle( (0,0), 0.7, color='white')
@@ -421,76 +403,64 @@ plt.show()
 
 # I have an idea to combine the statuses [`Single`, `Widow`, `Divorced` ] and [`Together`, `Married`], because the client, as a consumer, is better described not by a specific status, but by the presence of a partner
 
-# In[317]:
+# In[33]:
 
 
-data['Has_Partner'] = data["Marital_Status"].replace({'Single': 'No', 
+data['HasPartner'] = data["Marital_Status"].replace({'Single': 'No', 
                                                       'Widow': 'No',
                                                       'Divorced': 'No',
                                                       'Together': 'Yes',
                                                       'Married': 'Yes'})
 
 
-# In[486]:
+# In[34]:
 
 
-unique_column_labels = data['Has_Partner'].unique()
-sizes = []
-
-for i, label in enumerate(unique_column_labels):
-    sizes.append(data.loc[data['Has_Partner'] == label].shape[0])
+sizes = dict(data['HasPartner'].value_counts())
 
 plt.figure(figsize=(12, 8))
 plt.title("Does the customer has a partner")
-plt.pie(sizes, labels=unique_column_labels, autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
-plt.legend(title="Does the customer has a partner", labels=unique_column_labels, bbox_to_anchor=(1, 1))
-
-# add a circle at the center to transform it in a donut chart
-my_circle=plt.Circle( (0,0), 0.7, color='white')
-p=plt.gcf()
-p.gca().add_artist(my_circle)
+plt.pie(sizes.values(), labels=sizes.keys(), autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
 
 plt.show()
 
 
+# So the most customers are in relationships
+
 # ## Kidhome and Teenhome
 
-# In[319]:
+# In[35]:
 
 
 data['Kidhome'].value_counts()
 
 
-# In[320]:
+# In[36]:
 
 
 data['Teenhome'].value_counts()
 
 
-# I think the full number of children in the client's household can help us to better interpret the result of clustering
+# Let's consider all children in the household with `NumChildren` feature
 # 
-# I would also introduce feature `HasChildren` which is 1, if number of children is not zero
+# I would also introduce feature `HasChildren` which equals 1, if customer has one or more children, and equals 0 if customer doesn't have children
 
-# In[331]:
+# In[37]:
 
 
 data['NumChildren'] = data['Kidhome'] + data['Teenhome']
 data['HasChildren'] = (data['NumChildren'] >= 1).astype('int64')
 
 
-# In[332]:
+# In[38]:
 
 
-unique_column_labels = data['NumChildren'].unique()
-sizes = []
-
-for i, label in enumerate(unique_column_labels):
-    sizes.append(data.loc[data['NumChildren'] == label].shape[0])
+sizes = dict(data['NumChildren'].value_counts())
 
 plt.figure(figsize=(12, 8))
 plt.title("Number of children in customers households")
-plt.pie(sizes, labels=unique_column_labels, autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
-plt.legend(title="Number of children", labels=unique_column_labels, bbox_to_anchor=(1, 1))
+plt.pie(sizes.values(), labels=sizes.keys(), autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
+plt.legend(title="Number of children", labels=sizes.keys(), bbox_to_anchor=(1, 1))
 
 # add a circle at the center to transform it in a donut chart
 my_circle=plt.Circle( (0,0), 0.7, color='white')
@@ -502,11 +472,11 @@ plt.show()
 
 # We see that the most customers have 1 child
 
-# In[350]:
+# In[39]:
 
 
 plt.figure(figsize=(18, 6))
-ax = sns.boxplot(data=data.query('Income < 500000'), x='HasChildren', y='Income', palette=PALETTE)
+ax = sns.boxplot(data=data.query('Income < 500000'), x='HasChildren', y='Income', palette=PALETTE, showfliers=False)
 plt.title('Customers income depending on having children')
 ax.set_xticklabels(['No', 'Yes'])
 ax.set_xlabel('Does the customer has children')
@@ -518,27 +488,23 @@ plt.show()
 
 # ## Amount spent
 
-# In[420]:
+# In[40]:
 
 
 mnt = data.filter(like='Mnt').apply(lambda x: sum(x), axis=0)
 
 
-# In[432]:
+# In[41]:
 
 
-unique_column_labels = data.filter(like='Mnt').columns
-sizes = []
-
-for i, label in enumerate(unique_column_labels):
-    sizes.append(data[label].sum())
+sizes = dict(mnt)
 
 plt.figure(figsize=(12, 8))
 plt.title("Amount spent on different types of products")
-plt.pie(sizes, labels=['Wine', 'Fruits', 'Meat',
-                       'Fish', 'Sweets', 'Gold'], autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
+plt.pie(sizes.values(), labels=['Wine', 'Fruits', 'Meat',
+                                'Fish', 'Sweets', 'Gold'], autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
 plt.legend(title="Product type", labels=['Wine', 'Fruits', 'Meat',
-                                                    'Fish', 'Sweets', 'Gold'], bbox_to_anchor=(1, 1))
+                                         'Fish', 'Sweets', 'Gold'], bbox_to_anchor=(1, 1))
 
 # add a circle at the center to transform it in a donut chart
 my_circle=plt.Circle( (0,0), 0.7, color='white')
@@ -548,21 +514,76 @@ p.gca().add_artist(my_circle)
 plt.show()
 
 
-# It seems like the Wine is the most popular product among customers
-
 # `Wines` and `Meat` products are the most spent on
 
-# Let's introduce `MntTotal` feature, which is the total amount spent in the last 2 years
+# Let's introduce `MntTotal` feature, which is the total amount spent by customer in the last 2 years
 
-# In[433]:
+# In[42]:
 
 
 data['MntTotal'] = data.filter(like='Mnt').sum(axis=1)
 
 
+# And i will calculate the percent of amount spent on each product type from total amount spent for each customer
+
+# In[43]:
+
+
+data = data.assign(
+        percentWines=lambda x: x['MntWines'] / x['MntTotal'] * 100,
+        percentMeat=lambda x: x['MntMeatProducts'] / x['MntTotal'] * 100,
+        percentFruits=lambda x: x['MntFruits'] / x['MntTotal'] * 100,
+        percentFish=lambda x: x['MntFishProducts'] / x['MntTotal'] * 100,
+        percentSweets=lambda x: x['MntSweetProducts'] / x['MntTotal'] * 100,
+        percentGold=lambda x: x['MntGoldProds'] / x['MntTotal'] * 100,
+)
+
+
+# Let's analyze this features in terms of education
+
+# In[44]:
+
+
+fig, axes = plt.subplots(4, 6, figsize=(16, 15), sharey=True)
+fig.suptitle('Percent of amount spent on each product type from total amount spent by education', fontsize=20)
+
+for i, value in enumerate(data['Education'].unique()):
+    sns.boxplot(data=data.query(f'Education == "{value}"'), y='percentWines', showfliers=False, color=PALETTE[i], ax=axes[i, 0])
+    axes[i, 0].set_ylim(0, 100)
+    axes[i, 0].set_xlabel('Wine')
+    axes[i, 0].set_ylabel('')
+    
+    sns.boxplot(data=data.query(f'Education == "{value}"'), y='percentMeat', showfliers=False, color=PALETTE[i], ax=axes[i, 1])
+    axes[i, 1].set_xlabel('Meat')
+    axes[i, 1].set_ylabel('')
+    
+    sns.boxplot(data=data.query(f'Education == "{value}"'), y='percentFruits', showfliers=False, color=PALETTE[i], ax=axes[i, 2])
+    axes[i, 2].set_xlabel('Fruits')
+    axes[i, 2].set_ylabel('')
+    axes[i, 2].set_title(f'{value}', x=1)
+    
+    sns.boxplot(data=data.query(f'Education == "{value}"'), y='percentFish', showfliers=False, color=PALETTE[i], ax=axes[i, 3])
+    axes[i, 3].set_xlabel('Fish')
+    axes[i, 3].set_ylabel('')
+    
+    sns.boxplot(data=data.query(f'Education == "{value}"'), y='percentSweets', showfliers=False, color=PALETTE[i], ax=axes[i, 4])
+    axes[i, 4].set_xlabel('Sweets')
+    axes[i, 4].set_ylabel('')
+    
+    sns.boxplot(data=data.query(f'Education == "{value}"'), y='percentGold', showfliers=False, color=PALETTE[i], ax=axes[i, 5])
+    axes[i, 5].set_xlabel('Gold')
+    axes[i, 5].set_ylabel('')
+    
+plt.tight_layout()
+
+
+# Customers with PhD, Bachelor and Master degree mostly spend on Wine and Meat products. Also have to notice, that more than a half of PhD's spendings are Wine produts (in median)
+# 
+# And Basic degree customers spend more on Gold, Fish, Sweets
+
 # Now let's check the total amount spent depending on education degrees and number of children
 
-# In[434]:
+# In[42]:
 
 
 plt.figure(figsize=(18, 6))
@@ -572,9 +593,9 @@ plt.title('Customers amount spent depending on an education degree')
 plt.show()
 
 
-# Customers with PhD degree spent the most amount in last 2 years, customers with Basic degree - the least amount. That corresponds to `Income` distribution
+# Customers with PhD degree spent the most amount in last 2 years, customers with Basic degree - the least amount. That corresponds to the `Income` distribution
 
-# In[352]:
+# In[43]:
 
 
 plt.figure(figsize=(18, 6))
@@ -590,48 +611,39 @@ plt.show()
 
 # ## Number of purchases
 
-# In[444]:
+# In[44]:
 
 
-data.filter(regex='Num[^Deals].+Purchases').columns
+num = data.filter(regex='Num[^Deals].+Purchases').sum(axis=0)
 
 
-# In[448]:
+# In[45]:
 
 
-unique_column_labels = data.filter(regex='Num[^Deals].+Purchases').columns
-sizes = []
-
-for i, label in enumerate(unique_column_labels):
-    sizes.append(data[label].sum())
+sizes = dict(num)
 
 plt.figure(figsize=(12, 8))
 plt.title("Shopping types proportions")
-plt.pie(sizes, labels=['Web', 'Catalog', 'Store'], autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
-plt.legend(title="Purchased at", labels=['Web', 'Catalog', 'Store'], bbox_to_anchor=(1, 1))
-
-# add a circle at the center to transform it in a donut chart
-my_circle=plt.Circle( (0,0), 0.7, color='white')
-p=plt.gcf()
-p.gca().add_artist(my_circle)
+plt.pie(sizes.values(), labels=['Website', 'Catalog', 'Store'], autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
+plt.legend(title="Purchased at", labels=['Website', 'Catalog', 'Store'], bbox_to_anchor=(1, 1))
 
 plt.show()
 
 
-# Store purchases are the most popular
+# The most purchases are from store
 
-# There is interesting insight that customers with `Basic` education degree have more website visits than others:
+# There is interesting insight that customers with `Basic` education degree have more website visits per month than others:
 
-# In[493]:
+# In[45]:
 
 
 fig, axes= plt.subplots(2, 1, figsize=(18, 13))
 
-sns.boxplot(data=data, x='Education', y='NumWebVisitsMonth', palette=PALETTE, ax=axes[0])
-axes[0].set_title('Number of website visits depending on education degree')
+sns.boxplot(data=data, x='Education', y='NumWebVisitsMonth', palette=PALETTE, showfliers=False, ax=axes[0])
+axes[0].set_title('Number of website visits per month depending on education degree')
 axes[0].set_xlabel('')
 
-sns.boxplot(data=data, x='Education', y='NumWebPurchases', palette=PALETTE, ax=axes[1])
+sns.boxplot(data=data, x='Education', y='NumWebPurchases', palette=PALETTE, showfliers=False, ax=axes[1])
 axes[1].set_title('Number of web purchases depending on education degree')
 axes[1].set_xlabel('')
 
@@ -642,17 +654,17 @@ plt.show()
 
 # Same thing with customers, that have children:
 
-# In[506]:
+# In[46]:
 
 
 fig, axes= plt.subplots(2, 1, figsize=(18, 12))
 
-sns.boxplot(data=data, x='HasChildren', y='NumWebVisitsMonth', palette=PALETTE, ax=axes[0])
-axes[0].set_title('Number of website visits depending on having children')
+sns.boxplot(data=data, x='HasChildren', y='NumWebVisitsMonth', palette=PALETTE, showfliers=False, ax=axes[0])
+axes[0].set_title('Number of website visits per month depending on having children')
 axes[0].set_xlabel('')
 axes[0].set_xticklabels(['No children', 'One or more chidren'])
 
-sns.boxplot(data=data, x='HasChildren', y='NumWebPurchases', palette=PALETTE, ax=axes[1])
+sns.boxplot(data=data, x='HasChildren', y='NumWebPurchases', palette=PALETTE, showfliers=False, ax=axes[1])
 axes[1].set_title('Number of web purchases depending on having children')
 axes[1].set_xlabel('')
 axes[1].set_xticklabels(['No children', 'One or more chidren'])
@@ -660,7 +672,7 @@ axes[1].set_xticklabels(['No children', 'One or more chidren'])
 plt.show()
 
 
-# In[491]:
+# In[47]:
 
 
 data['NumTotalPurchases'] = data.filter(regex='Num[^Deals].+Purchases').sum(axis=1)
@@ -668,7 +680,7 @@ data['NumTotalPurchases'] = data.filter(regex='Num[^Deals].+Purchases').sum(axis
 
 # The feature `NumTotalPurchases` is the sum of all purchases made by a customer
 
-# In[503]:
+# In[48]:
 
 
 data.loc[(data['NumTotalPurchases'] == 0) & (data['MntTotal'] != 0)]
@@ -676,258 +688,646 @@ data.loc[(data['NumTotalPurchases'] == 0) & (data['MntTotal'] != 0)]
 
 # There are 6 customers with 0 purchases, but total amount spent is not 0. Seems like incorrectly collected data, let's delete these rows.
 
-# In[507]:
+# In[49]:
 
 
 data.drop(data.loc[(data['NumTotalPurchases'] == 0) & (data['MntTotal'] != 0)].index, inplace=True)
 
 
-# And i would also add `AvgPurchaseFrequency` feature, that indicates how active the customer is (customers doing a purchase every `AvgPurchaseFrequency` days)
+# Let's look on the correlation between `CustomerFor` and `NumTotalPurchases`
 
-# In[512]:
-
-
-data['AvgPurchaseFrequency'] = data['Customer_For'] / data['NumTotalPurchases']
+# In[50]:
 
 
-# In[530]:
-
-
-plt.figure(figsize=(16,5))
-plt.title(f'Customers purchase frequency boxplot (days)')
-ax = sns.boxplot(data['AvgPurchaseFrequency'], palette=PALETTE)
-plt.xticks(np.linspace(0, 900, 21, dtype=int))
+plt.figure(figsize=(16, 6))
+plt.title('Customer for vs number of purchases')
+sns.scatterplot(data=data, x='CustomerFor', y='NumTotalPurchases', alpha=0.5)
+plt.xlabel('Customer for (days)')
+plt.ylabel('Total number of purchases')
 plt.show()
 
 
-# In[537]:
+# Seems like there is no correlation between `CustomerFor` and `NumTotalPurchases`. So i assume that information about number of purchases is also collected in the last 2 years, and we can evaluate customer's activity with `NumTotalPurchases`
+
+# `AvgCheck` is the average check of the customers purchases
+
+# In[51]:
 
 
 data['AvgCheck'] = data['MntTotal'] / data['NumTotalPurchases']
 
 
-# In[544]:
+# In[52]:
 
 
 plt.figure(figsize=(16,5))
 plt.title(f'Customers purchase frequency boxplot (days)')
-ax = sns.boxplot(data['AvgCheck'], palette=PALETTE)
-plt.xticks(np.linspace(0, 1700, 21, dtype=int))
+ax = sns.boxplot(data.query('AvgCheck < 1600')['AvgCheck'], palette=PALETTE)
+plt.xticks(np.linspace(0, 250, 11, dtype=int))
 plt.show()
+
+
+# There is also one outlier with 1679 average check
+
+# In[53]:
+
+
+data.query('AvgCheck > 1500')
 
 
 # ## Accepted campaigns
 
-# TODO: Stacked plots for total accepted campaign by education degree
+# Let's add `AcceptedTotal` feature which is the number of accepted campaigns by customer
 
-# In[531]:
+# In[54]:
 
 
 data['AcceptedTotal'] = data.filter(regex='Accepted|Response').sum(axis=1)
 
 
-# In[532]:
-
-
-sns.countplot(data['AcceptedTotal'])
-
-
 # In[55]:
 
 
-data['AcceptedTotal'].value_counts()
+plt.figure(figsize=(18, 6))
 
+ax = sns.countplot(data['AcceptedTotal'], palette=PALETTE)
+
+plt.title('Number of accepted campaigns by customers')
+plt.xlabel('Accepted total')
+
+# annotating the bars
+for p in ax.patches:
+    ax.annotate(f'{p.get_height()}', (p.get_x()+0.30, p.get_height()+3))
+
+
+# The majority of customers didn't accepted any campaign
 
 # In[56]:
 
 
-data['HasEverAccepted'] = (data['AcceptedTotal'] != 0).astype('int64')
+total = data.groupby('AcceptedTotal').sum().reset_index()
 
 
 # In[57]:
 
 
-sns.countplot(data['HasEverAccepted'])
+total
 
 
-# ## Multivariate analysis
-
-# In[774]:
+# In[59]:
 
 
-NUMERICAL_FEATURES = ['Age', 'Income', 'NumChildren', 'Customer_For', 
-                      'Recency', 'MntWines', 'MntTotal', 
-                      'NumTotalPurchases', 'AcceptedTotal']
+plt.figure(figsize=(10, 10))
 
+accepted_data = pd.Series({i: 0 for i in range(6)})
+tmp_data = accepted_data
+for i, value in enumerate(data['Education'].unique()):
+    tmp_data += accepted_data
+    accepted_data = (data.query(f'Education == "{value}"')['AcceptedTotal'].value_counts()
+                                                                           .divide(data['AcceptedTotal'].value_counts())
+                                                                           .multiply(100))
+    ax = accepted_data.plot(kind='bar', bottom=tmp_data, color=PALETTE[i], label=f'{value}')
 
-# In[775]:
+del tmp_data
 
+ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+plt.title('Number of accepted campaigns proportion by education degree', y=1.05)
+plt.xlabel('Number of accepted campaigns')
+plt.ylabel('%')
+plt.legend(bbox_to_anchor=(1,1))
 
-sns.pairplot(data=data[NUMERICAL_FEATURES], 
-             kind='scatter')
 plt.show()
 
 
-# ## EDA Result
-
-# TBD
-
-# # Data Cleaning
-
-# In[609]:
-
-
-data_cleaned = data.drop(data[(data['Income'] > 600000) |
-                              (data['Age'] > 100) |
-                              (data['AvgPurchaseFrequency'] > 450) |
-                              (data['AvgCheck'] > 1500)].index)
-
-
-# In[610]:
-
-
-data_cleaned
-
-
-# # Data preprocessing
-
-# ## Binary encoding
-
-# ## Ordinal encoding
-
-# In[772]:
-
-
-# NOT USED
-
+# Basic degree customers most offen do not accept campaigns, but there are someone who accepted 1 or 2 campaigns
 
 # In[60]:
 
 
-education_encoder = OrdinalEncoder(categories=[['Basic', 'Bachelor', 'Master', 'PhD']])
-data['Education'] = education_encoder.fit_transform(data['Education'].values.reshape(-1,1))[:, 0]
+plt.figure(figsize=(10, 10))
+
+accepted_data = pd.Series({i: 0 for i in range(6)})
+tmp_data = accepted_data
+for i, value in enumerate(data['HasChildren'].unique()):
+    tmp_data += accepted_data
+    accepted_data = (data.query(f'HasChildren == {value}')['AcceptedTotal'].value_counts()
+                                                                           .divide(data['AcceptedTotal'].value_counts())
+                                                                           .multiply(100))
+    ax = accepted_data.plot(kind='bar', bottom=tmp_data, color=PALETTE[i], label=f'{value}')
+
+del tmp_data
+
+ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+plt.title('Number of accepted campaigns proportion by having children', y=1.05)
+plt.xlabel('Number of accepted campaigns')
+plt.ylabel('%')
+plt.legend(['Customers without children', 'Customers with one or more children'], bbox_to_anchor=(1,1))
+
+plt.show()
 
 
-# ## One Hot Encoder
+# This graph illustrates us that the more campaigns was accepted by customers, the more likely it would be customer without children
 
-# In[773]:
+# ## Data Cleaning
+
+# In[61]:
 
 
-# NOT USED
+data_cleaned = data.drop(data[(data['Income'] > 140000) |
+                              (data['Age'] > 100) |
+                              (data['AvgCheck'] > 150)].index)
 
 
 # In[62]:
 
 
-marital_status_encoder = OneHotEncoder(sparse=False)
-transformed = marital_status_encoder.fit_transform(data['Marital_Status'].values.reshape(-1,1))
-#Create a Pandas DataFrame of the hot encoded column
-ohe_df = pd.DataFrame(transformed, columns=marital_status_encoder.get_feature_names())
-ohe_df.index = data.index
-#concat with original data
-data = pd.concat([data, ohe_df], axis=1).drop(columns='Marital_Status')
+data_cleaned
 
 
-# ## Feature Selection
+# ## Multivariate analysis
 
-# In[754]:
+# In[63]:
 
 
-FEATURES = ['Income', 'MntTotal', 'Customer_For', 'AvgCheck']
+NUMERICAL_FEATURES = ['Age', 'Income', 'NumChildren', 'CustomerFor', 
+                      'Recency', 'MntWines', 'MntTotal', 
+                      'NumTotalPurchases', 'AcceptedTotal', 'AvgCheck']
 
+
+# In[64]:
+
+
+sns.pairplot(data=data_cleaned[NUMERICAL_FEATURES], 
+             kind='scatter', plot_kws={'alpha':0.3})
+plt.show()
+
+
+# We can see different areas of objects on some scatterplots. `MntTotal` and `NumTotalPurchases`, for instance, or `AvgCheck` and `Age`
+# 
+# That happens, because `NumTotalPurchases` has multimodal distribution. And `AvgCheck` calculates depending on `NumTotalPurchases` 
+
+# In[65]:
+
+
+corr_matr = data_cleaned[NUMERICAL_FEATURES].corr(method='pearson')
+plt.figure(figsize=(10,10))
+sns.heatmap(corr_matr, annot=True, cmap='coolwarm', square=True)
+plt.title("Pearson's correlation heatmap")
+plt.show()
+
+
+# All correlations are clear and explainable
+
+# # Data preprocessing
 
 # ## Feature scaling
 
-# In[755]:
+# In[66]:
 
 
-quantile_scaler = gen_features(
-    columns = [[c] for c in FEATURES],
-    classes=[{'class': StandardScaler}]
+data.info()
+
+
+# In[67]:
+
+
+SELECTED_FEATURES = ['AvgCheck', 'Income', 'NumTotalPurchases', 'MntTotal']
+
+
+# In[68]:
+
+
+scaler = gen_features(
+    columns = [[c] for c in SELECTED_FEATURES],
+    classes=[{'class': PowerTransformer, 'method': 'box-cox'}]
 )
 
 
-# In[756]:
+# The features and scaling method was chosen by iterative process of evaluating different combinations with silhouette score
+# 
+# By the way, $Box-Cox$ transformation:
+# 
+# ![image.png](attachment:78f0f6d0-d1dc-455d-b0cf-07918192337d.png)
+# 
+# PowerTransformer automatically select lambda by estimating through maximum likelihood.
+
+# The feature selected are correlated, but i guess this is not really a problem in k means clustering ([source](https://www.quora.com/What-happens-when-you-pass-correlated-variables-to-a-k-means-clustering-Also-is-there-a-way-by-which-clustering-can-be-used-to-group-similar-pattern-observed-for-a-variable-over-time)). In addition to that, all other uncorrelated features are not really interesting to cluster by
+
+# In[69]:
 
 
-scaling_mapper = DataFrameMapper(quantile_scaler, default=None, df_out=True)
+scaling_mapper = DataFrameMapper(scaler, default=None, df_out=True)
 data_cleaned_scaled = scaling_mapper.fit_transform(data_cleaned)
 data_scaled = scaling_mapper.transform(data)
 
 
-# In[757]:
+# In[70]:
 
 
 data_cleaned_scaled
 
 
+# In[76]:
+
+
+g = sns.pairplot(data=data_cleaned_scaled[SELECTED_FEATURES], 
+             kind='scatter')
+g.fig.suptitle('Selected features after scaling')
+
+plt.tight_layout()
+
+
 # # Clustering
 
-# In[758]:
+# ## K Means 
+
+# __Choosing the number of clusters__
+# 
+# I will use the elbow rule and silhouette score visualizasion for choosing the optimal number of clusters (k)
+
+# In[77]:
 
 
-model = KMeans()
-visualizer = KElbowVisualizer(model, k=(4,12))
+options = range(2,9)
+inertias = []
 
-visualizer.fit(data_cleaned_scaled[FEATURES])        # Fit the data to the visualizer
-visualizer.show()
+for n_clusters in options:
+    model = KMeans(n_clusters, random_state=42, init='k-means++').fit(data_cleaned_scaled[SELECTED_FEATURES])
+    inertias.append(model.inertia_)
 
-
-# In[759]:
-
-
-model = KMeans(4, random_state=42)
-visualizer = SilhouetteVisualizer(model, colors='yellowbrick')
-
-visualizer.fit(data_cleaned_scaled[FEATURES])        # Fit the data to the visualizer
-visualizer.show() 
+plt.figure(figsize=(20,10))    
+plt.title("The elbow rule visualisation")
+plt.plot(options, inertias, '-o')
+plt.xlabel('Number of clusters (k)')
+plt.ylabel('Inertia');
 
 
-# In[761]:
+# In[78]:
 
 
-kmeans = KMeans(n_clusters=4,init='k-means++',random_state=42)
-kmeans.fit(data_cleaned_scaled[FEATURES])
+k_range = range(2, 6)
+fig, axes = plt.subplots(4, 1, figsize=(10, 18))
 
-pred=kmeans.predict(data_cleaned_scaled[FEATURES])
+for i in k_range:   
+    model = KMeans(i, init='k-means++', n_init=100, random_state=42)
+    visualizer = SilhouetteVisualizer(model, colors='yellowbrick', ax=axes[i-2])
+    visualizer.fit(data_cleaned_scaled[SELECTED_FEATURES])
+    visualizer.finalize()
+    axes[i-2].set_xlim(-0.1, 1)
+    
+plt.tight_layout()
 
-data_clustered = data_cleaned.copy()
-data_clustered['Cluster'] = pred + 1
+
+# I think 4 is the optimal number of clusters. 
+# 
+# According to the elbow rule plot, 4 or 5 clusters could be optimal
+# 
+# Looking on the silhouette coefficient visualisation, 4 clusters provides relatively high silhouette scores for each cluster. 
+
+# In[79]:
 
 
-# In[783]:
+kmeans = KMeans(n_clusters=4, init='k-means++', random_state=42)
+kmeans.fit(data_cleaned_scaled[SELECTED_FEATURES])
+
+pred = kmeans.predict(data_cleaned_scaled[SELECTED_FEATURES])
+
+data_cleaned_clustered = data_cleaned.copy()
+data_cleaned_clustered['Cluster'] = pred + 1
 
 
-fig = px.scatter_3d(data_clustered, x="Income", y="AvgCheck", z="Customer_For", color='Cluster', width=800, height=800)
+# In[80]:
+
+
+fig = px.scatter_3d(data_cleaned_clustered, x="Income", y="AvgCheck", z="MntTotal", color='Cluster', width=800, height=800)
 fig.show()
 
 
-# # PCA
+# __PCA visualisation__
 
-# In[779]:
+# In[81]:
 
 
 pca = PCA(n_components=2)
-pca_data = pca.fit_transform(data_cleaned_scaled[FEATURES])
+pca_data = pca.fit_transform(data_cleaned_scaled[SELECTED_FEATURES])
 pca_df = pd.DataFrame.from_records(data=pca_data, columns=["x1","x2"])
 pca_df["Cluster"] = pred + 1
 
 
-# In[780]:
+# In[82]:
 
 
 fig = px.scatter(pca_df, x="x1", y="x2", color='Cluster', width=800, height=800)
 fig.show()
 
 
-# In[781]:
+# The model confuses cluster 2 and 3 a little, but that is not a big deal in general
+
+# PCA's eigenvectors explained variance:
+
+# In[83]:
 
 
 pca.explained_variance_ratio_
 
 
-# In[782]:
+# In[84]:
 
 
 pca.explained_variance_ratio_.sum()
 
+
+# One eigenvector explains around 90% of variance, and that is occured because of correlated variables
+
+# And now let's predict cluster labels on full dataset with outliers
+
+# In[85]:
+
+
+full_preds = kmeans.predict(data_scaled[SELECTED_FEATURES])
+data_clustered = data.copy()
+data_clustered['Cluster'] = full_preds + 1
+
+
+# In[86]:
+
+
+data_clustered
+
+
+# # Clusters analysis
+
+# In[87]:
+
+
+sizes = dict(data_clustered['Cluster'].value_counts())
+
+plt.figure(figsize=(12, 8))
+plt.title("Clusters proportions")
+plt.pie(sizes.values(), labels=sorted(sizes.keys()), autopct="%.1f%%", pctdistance=0.85, shadow=True, colors=PALETTE)
+plt.legend(title="Customer's cluster", labels=sorted(sizes.keys()), bbox_to_anchor=(1, 1))
+
+# add a circle at the center to transform it in a donut chart
+my_circle=plt.Circle( (0,0), 0.7, color='white')
+p=plt.gcf()
+p.gca().add_artist(my_circle)
+
+plt.show()
+
+
+# Cluster 4 is the biggets cluster, around 1/3 of all customers. Clusters 1, 2 and 3 are around same sizes
+
+# ## Income
+
+# In[88]:
+
+
+plt.figure(figsize=(16,5))
+plt.title(f'Customers income by cluster')
+ax = sns.boxplot(data=data_clustered, x='Cluster', y='Income', palette=PALETTE, showfliers=False)
+plt.show()
+
+
+# Cluster 1: low income
+# 
+# Cluster 2: high income
+# 
+# Cluster 3: very high income
+# 
+# Cluster 4: medium income
+
+# In[89]:
+
+
+data_clustered.query('Income > 140000')
+
+
+# And the income outliers are distributed in 3rd cluster
+
+# ## Average check
+
+# In[90]:
+
+
+plt.figure(figsize=(16,5))
+plt.title(f'Customers amount spent by clusters')
+ax = sns.boxplot(data=data_clustered, x='Cluster', y='AvgCheck', palette=PALETTE, showfliers=False)
+plt.show()
+
+
+# Average check corresponds to income of clusters, but the gap between 3rd cluster and others is huge
+
+# In[91]:
+
+
+plt.figure(figsize=(16,5))
+plt.title(f'Customers amount spent by clusters')
+ax = sns.boxplot(data=data_clustered, x='Cluster', y='NumTotalPurchases', palette=PALETTE, showfliers=False)
+plt.show()
+
+
+# Cluster 2 and 3 customers are the most active and frequent buyers, cluster 4 have medium frequency, and cluster 1 has low frequency of purchases
+
+# ## Education
+
+# In[92]:
+
+
+plt.figure(figsize=(16,5))
+plt.title(f'Counplot of education degrees by clusters')
+sns.countplot(data=data_clustered, x='Education', hue='Cluster', palette=PALETTE)
+plt.show()
+
+
+# The Basic degree is presented in mostly in 1st cluster
+
+# ## Children
+
+# In[93]:
+
+
+fig, axes = plt.subplots(2, 2, figsize=(16, 10))   
+k = 0
+for i in range(0, 2):
+    for j in range(0, 2):
+        k += 1
+        sizes = dict(data_clustered.query(f'Cluster == {k}')['HasChildren'].value_counts().sort_index(ascending=False))
+        axes[i, j].set_title(f"Cluster {k}")
+        axes[i, j].pie(sizes.values(), labels=['Yes', 'No'], autopct="%.1f%%", pctdistance=0.75, shadow=True, colors=PALETTE)
+
+fig.suptitle('Having children in different clusters')
+fig.legend(title="Does the customer have children", labels=['Yes', 'No'], bbox_to_anchor=(1, 1)) 
+fig.show()
+
+
+# There are mostly parents in 1, 2, 4 clusters. And customers in 3rd clusters are mostly single
+
+# In[94]:
+
+
+fig, axes = plt.subplots(2, 2, figsize=(16, 10))   
+k = 0
+for i in range(0, 2):
+    for j in range(0, 2):
+        k += 1
+        num = data_clustered.query(f'Cluster == {k}').filter(regex='Num[^Deals|Total].+Purchases').sum(axis=0)
+        sizes = dict(num)
+        axes[i, j].set_title(f"Cluster {k}")
+        axes[i, j].pie(sizes.values(), labels=sizes.keys(), autopct="%.1f%%", pctdistance=0.75, shadow=True, colors=PALETTE)
+
+fig.suptitle('Education degrees proportions by clusters')
+fig.legend(title="Does the customer have children", labels=sizes.keys(), bbox_to_anchor=(1, 1)) 
+fig.show()
+
+
+# Customers from 2nd and 3rd clusters buy from catalog more than from 1 and 4 clusters. Maybe catalog products are new products and they are pretty expensive
+
+# Now let's look on number of website visits by clusters
+
+# In[95]:
+
+
+plt.figure(figsize=(16,5))
+plt.title(f'Number of web visits per month by clusters')
+ax = sns.boxplot(data=data_clustered, x='Cluster', y='NumWebVisitsMonth', palette=PALETTE, showfliers=False)
+plt.show()
+
+
+# 1st and 4th clusters visits the website the most
+
+# In[96]:
+
+
+fig, axes = plt.subplots(4, 6, figsize=(16, 15), sharey=True)
+fig.suptitle('Percent of amount spent on each product type from total amount spent by education', fontsize=20)
+
+for i, value in enumerate(sorted(data_clustered['Cluster'].unique())):
+    sns.boxplot(data=data_clustered.query(f'Cluster == {value}'), y='percentWines', showfliers=False, color=PALETTE[i], ax=axes[i, 0])
+    axes[i, 0].set_ylim(0, 100)
+    axes[i, 0].set_xlabel('Wine')
+    axes[i, 0].set_ylabel('')
+    
+    sns.boxplot(data=data_clustered.query(f'Cluster == {value}'), y='percentMeat', showfliers=False, color=PALETTE[i], ax=axes[i, 1])
+    axes[i, 1].set_xlabel('Meat')
+    axes[i, 1].set_ylabel('')
+    
+    sns.boxplot(data=data_clustered.query(f'Cluster == {value}'), y='percentFruits', showfliers=False, color=PALETTE[i], ax=axes[i, 2])
+    axes[i, 2].set_xlabel('Fruits')
+    axes[i, 2].set_ylabel('')
+    axes[i, 2].set_title(f'Cluster {value}', x=1)
+    
+    sns.boxplot(data=data_clustered.query(f'Cluster == {value}'), y='percentFish', showfliers=False, color=PALETTE[i], ax=axes[i, 3])
+    axes[i, 3].set_xlabel('Fish')
+    axes[i, 3].set_ylabel('')
+    
+    sns.boxplot(data=data_clustered.query(f'Cluster == {value}'), y='percentSweets', showfliers=False, color=PALETTE[i], ax=axes[i, 4])
+    axes[i, 4].set_xlabel('Sweets')
+    axes[i, 4].set_ylabel('')
+    
+    sns.boxplot(data=data_clustered.query(f'Cluster == {value}'), y='percentGold', showfliers=False, color=PALETTE[i], ax=axes[i, 5])
+    axes[i, 5].set_xlabel('Gold')
+    axes[i, 5].set_ylabel('')
+    
+plt.tight_layout()
+
+
+# As we see, popular products types are the same in all clusters: wine and meat. But cluster 3 buys Meat more than others. Cluster 1 buy  buy Gold products in addition to Wine and Meat
+
+# ## Accepted Campaigns
+
+# In[98]:
+
+
+fig, axes = plt.subplots(4, 1, figsize=(16, 20))
+
+for i in range(1, 5):
+    ax = (data_clustered.query(f'Cluster == {i}')[['AcceptedCmp1', 'AcceptedCmp2', 'AcceptedCmp3', 'AcceptedCmp4', 'AcceptedCmp5', 'Response']]
+          .sum() 
+          .divide(data_clustered.query(f'Cluster == {i}').shape[0]).multiply(100)
+          .plot(kind='bar', figsize=(18,15), title=f'% of customers from Cluster {i} accepted different campaigns', ax=axes[i-1], color=PALETTE[i-1]))
+    ax.set_xticklabels(['Campaign 1', 'Campaign 2', 'Campaign 3', 'Campaign 4', 'Campaign 5', 'Last campaign'], rotation=0)
+    
+plt.tight_layout()
+
+
+# We see that:
+# 
+# - The biggest interest in campaign 1 showed Cluster 2 and 3
+# - Campaign 2 acceptance in relatively low in any cluster
+# - The biggest interest in campaign 3 showed Cluster 1
+# - Campaign 4 was relatively successful in all clusters besides Cluster 1
+# - The biggest interest in campaign 5 showed Cluster 3
+# - The last campaign was succesfull in all clusters
+
+# ## Complains
+
+# In[99]:
+
+
+complains_by_cluster = (data_clustered.groupby(by='Cluster')['Complain'].sum()
+                                      .divide(data_clustered['Cluster'].value_counts())
+                                      .multiply(100))
+
+ax = complains_by_cluster.plot(kind='bar', figsize=(18, 8), color=PALETTE[:4], 
+                               title='Percent of complained customers for the last 2 years in different clusters',
+                               ylabel='%', xlabel='Cluster')
+ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+
+plt.show()
+
+
+# Cluster 1 purchases less, but complains more, thats interesting
+
+# # Results
+
+# I would rate clusters as follow:
+# - Cluster 1 -> __Bronze__ customers
+# - Cluster 4 -> __Silver__ customers
+# - Cluster 2 -> __Gold__ customers
+# - Cluster 3 -> __Platinum__ customers
+
+# __Platinum customers:__
+# - Very high income
+# - Very high average check
+# - Frequent buyers
+# - Mostly single
+# - Mostly buy from: store and catalog, but the website is also good
+# - The most successful campaigns: 1, 5, the last
+# - The least successful campaigns: 2
+# - Rarely visit the site
+
+# __Gold customers:__
+# - High income
+# - High average check
+# - Frequent buyers
+# - 80% are parents
+# - Mostly buy from: store and website
+# - The most successful campaigns: 4, the last
+# - The least successful campaigns: 2, 5
+
+# __Silver customers:__
+# - Medium income
+# - Medium average check
+# - Medium frequency buyers
+# - Mostly parents
+# - Mostly buy from: store and website
+# - The most successful campaigns: 3, the last
+# - The least successful campaigns: 1, 2, 5 (0 acceptance in 2 and 5 campaigns)
+
+# __Bronze customers:__
+# - Low income
+# - Low average check
+# - Low frequency buyers
+# - Mostly parents
+# - There some undergraduates in this cluster
+# - Mostly buy from: store and website
+# - Visit the site the most
+# - The most successful campaigns: 3, the last
+# - The least successful campaigns: 1, 2, 4, 5 (0 acceptance in 2 and 5 campaigns)
+# - Complain the most
+
+# Aquired skills:
+# - Tried clustering for the first time
+# - Known more about KMeans, KModes, KPrototypes
+# - Learned some metrics for clustering
+# - And again, some visuals were hard to plot, now i can deal with them
