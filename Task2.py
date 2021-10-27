@@ -486,6 +486,18 @@ plt.show()
 
 # Customers without children have bigger income
 
+# In[102]:
+
+
+plt.figure(figsize=(18, 6))
+ax = sns.boxplot(data=data.query('Income < 500000'), x='HasPartner', y='Income', palette=PALETTE, showfliers=False)
+plt.title('Customers income depending on having a partner')
+ax.set_xticklabels(['No', 'Yes'])
+ax.set_xlabel('Does the customer has partner')
+
+plt.show()
+
+
 # ## Amount spent
 
 # In[40]:
@@ -799,7 +811,7 @@ plt.legend(bbox_to_anchor=(1,1))
 plt.show()
 
 
-# Basic degree customers most offen do not accept campaigns, but there are someone who accepted 1 or 2 campaigns
+# There are no Basic degree customers, who accepted more than 2 campaigns
 
 # In[60]:
 
@@ -1075,7 +1087,7 @@ p.gca().add_artist(my_circle)
 plt.show()
 
 
-# Cluster 4 is the biggets cluster, around 1/3 of all customers. Clusters 1, 2 and 3 are around same sizes
+# Cluster 1 is the biggets cluster, around 1/3 of all customers. Clusters 2, 3 and 4 are around same sizes
 
 # ## Income
 
@@ -1134,12 +1146,12 @@ plt.show()
 
 
 plt.figure(figsize=(16,5))
-plt.title(f'Counplot of education degrees by clusters')
+plt.title(f'Countplot of education degrees by clusters')
 sns.countplot(data=data_clustered, x='Education', hue='Cluster', palette=PALETTE)
 plt.show()
 
 
-# The Basic degree is presented in mostly in 1st cluster
+# The Basic degree is presented mostly in 1st cluster
 
 # ## Children
 
@@ -1162,7 +1174,7 @@ fig.show()
 
 # There are mostly parents in 1, 2, 4 clusters. And customers in 3rd clusters are mostly single
 
-# In[94]:
+# In[100]:
 
 
 fig, axes = plt.subplots(2, 2, figsize=(16, 10))   
@@ -1173,10 +1185,10 @@ for i in range(0, 2):
         num = data_clustered.query(f'Cluster == {k}').filter(regex='Num[^Deals|Total].+Purchases').sum(axis=0)
         sizes = dict(num)
         axes[i, j].set_title(f"Cluster {k}")
-        axes[i, j].pie(sizes.values(), labels=sizes.keys(), autopct="%.1f%%", pctdistance=0.75, shadow=True, colors=PALETTE)
+        axes[i, j].pie(sizes.values(), labels=['Website', 'Catalog', 'Store'], autopct="%.1f%%", pctdistance=0.75, shadow=True, colors=PALETTE)
 
-fig.suptitle('Education degrees proportions by clusters')
-fig.legend(title="Does the customer have children", labels=sizes.keys(), bbox_to_anchor=(1, 1)) 
+fig.suptitle('Shopping types proportions for each cluster')
+fig.legend(title="Shopping type", labels=['Website', 'Catalog', 'Store'], bbox_to_anchor=(1, 1)) 
 fig.show()
 
 
@@ -1231,7 +1243,7 @@ for i, value in enumerate(sorted(data_clustered['Cluster'].unique())):
 plt.tight_layout()
 
 
-# As we see, popular products types are the same in all clusters: wine and meat. But cluster 3 buys Meat more than others. Cluster 1 buy  buy Gold products in addition to Wine and Meat
+# As we see, popular products types are the same in all clusters: wine and meat. But cluster 3 buys Meat more than others. Cluster 1 buy Gold products in addition to Wine and Meat
 
 # ## Accepted Campaigns
 
